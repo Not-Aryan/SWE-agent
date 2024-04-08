@@ -5,6 +5,8 @@ import re
 import traceback
 from typing import Any, Dict
 import yaml
+import asyncio
+from prisma import Prisma
 
 from dataclasses import dataclass
 from getpass import getuser
@@ -24,6 +26,21 @@ from swebench import KEY_INSTANCE_ID, KEY_MODEL, KEY_PREDICTION
 from unidiff import PatchSet
 
 from sweagent.environment.utils import InvalidGithubURL, get_associated_commit_urls, get_gh_issue_data, parse_gh_issue_url
+
+keys_file_path = Path("keys.cfg")
+with open(keys_file_path, "r") as file:
+    lines = file.readlines()
+    SUPABASE_URL = ""
+    SUPABASE_KEY = ""
+
+    for line in lines:
+        if "SUPABASE_URL" in line:
+            SUPABASE_URL = line.split(":")[1].strip().strip("'")
+        elif "SUPABASE_KEY" in line:
+            SUPABASE_KEY = line.split(":")[1].strip().strip("'")
+
+import supabase_py
+supabase = supabase_py.create_client(SUPABASE_URL, SUPABASE_KEY)
 
 handler = RichHandler(show_time=False, show_path=False)
 handler.setLevel(logging.DEBUG)
@@ -246,7 +263,29 @@ def save_predictions(traj_dir, instance_id, info):
     }
     with open(output_file, "a+") as fp:
         print(json.dumps(datum), file=fp, flush=True)
-    logger.info(f"Saved predictions to {output_file}")
+    # dump to supabase
+    dump(output_file, output_file)
+    
+async def dump(file, fid) -> None:
+    prisma = Prisma()
+    await prisma.connect()
+    
+    # ingest test.traj as json
+    with open(file, 'r') as f:
+        data = f.read()
+    print(data)
+
+    # write your queries here
+    user = await prisma.swetest.create(
+        data={
+            'id': fid,
+            'data' : data
+        },
+    )
+    
+
+    await prisma.disconnect()
+
 
 
 if __name__ == "__main__":
